@@ -479,6 +479,16 @@ impl DefaultHasher {
     }
 }
 
+impl std::io::Write for DefaultHasher {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.update(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 macro_rules! define_hasher {
     (
         $(#[$attr:meta])*
@@ -606,6 +616,63 @@ impl<T: ser::Serialize + ?Sized> TestOnlyHash for T {
         let bytes = lcs::to_bytes(self).expect("serialize failed during hash.");
         let mut hasher = TestOnlyHasher::default();
         hasher.update(&bytes);
+        hasher.finish()
+    }
+}
+
+/// Alternative to CryptoHash
+pub trait SimpleHash {
+    /// The hash method
+    fn hash(&self) -> HashValue;
+
+    #[cfg(any(test, feature = "fuzzing"))]
+    /// The salt used for hashing this type.
+    fn salt() -> Vec<u8>;
+}
+
+/// A type whose hashing implementation is derived from LCS and a domain name.
+/// Because we use the Serde name of the type for seeding, only structs and enums are supported.
+pub trait CanonicalHash {}
+
+/// A type that can store an initial hashing state to avoid recomputations.
+pub trait InitialState<State> {
+    /// Where to store the initial hashing state.
+    fn initial_state() -> &'static once_cell::sync::OnceCell<State>;
+}
+
+fn compute_canonical_salt<'de, T>() -> Vec<u8>
+where
+    T: CanonicalHash + serde::Serialize + serde::Deserialize<'de>,
+{
+    let mut salt = Vec::new();
+    salt.extend_from_slice(std::any::type_name::<T>().as_bytes());
+    salt.extend_from_slice(LIBRA_HASH_SUFFIX);
+    salt
+}
+
+impl<'de, T> SimpleHash for T
+where
+    T: CanonicalHash + InitialState<DefaultHasher> + serde::Serialize + serde::Deserialize<'de>,
+{
+    #[cfg(any(test, feature = "fuzzing"))]
+    fn salt() -> Vec<u8> {
+        compute_canonical_salt::<'de, T>()
+    }
+
+    fn hash(&self) -> HashValue {
+        let mut hasher = T::initial_state()
+            .get_or_init(|| {
+                let mut hasher = DefaultHasher {
+                    state: Sha3::v256(),
+                };
+                // Hash the salt first to make it fixed size.
+                let seed = HashValue::from_sha3_256(&compute_canonical_salt::<'de, T>());
+                hasher.update(seed.as_ref());
+                hasher
+            })
+            .clone();
+        // Use LCS to write canonical bytes into the hasher.
+        lcs::serialize_into(&mut hasher, self).expect("LCS serialization should not fail");
         hasher.finish()
     }
 }

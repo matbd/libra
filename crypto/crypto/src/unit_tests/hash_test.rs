@@ -6,10 +6,10 @@ use bitvec::prelude::*;
 use libra_nibble::Nibble;
 use proptest::{collection::vec, prelude::*};
 use rand::{rngs::StdRng, SeedableRng};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Foo(u32);
 
 #[test]
@@ -25,6 +25,31 @@ fn test_default_hasher() {
     assert_eq!(
         format!("{:x}", b"world".test_only_hash()),
         "420baf620e3fcd9b3715b42b92506e9304d56e02d3a103499a3a292560cb66b2",
+    );
+}
+
+impl CanonicalHash for Foo {}
+
+impl InitialState<DefaultHasher> for Foo {
+    fn initial_state() -> &'static once_cell::sync::OnceCell<DefaultHasher> {
+        static STATE: once_cell::sync::OnceCell<DefaultHasher> = once_cell::sync::OnceCell::new();
+        &STATE
+    }
+}
+
+#[test]
+fn test_simple_hash() {
+    assert_eq!(
+        String::from_utf8_lossy(&Foo::salt()),
+        "libra_crypto::unit_tests::hash_test::Foo@@$$LIBRA$$@@"
+    );
+    let seed = HashValue::from_sha3_256(&Foo::salt());
+    assert_eq!(
+        Foo(32).hash(),
+        HashValue::from_iter_sha3(vec![
+            &seed.as_ref()[..],
+            lcs::to_bytes(&Foo(32)).unwrap().as_slice(),
+        ]),
     );
 }
 

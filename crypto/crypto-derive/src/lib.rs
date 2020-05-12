@@ -411,3 +411,19 @@ pub fn lcs_crypto_hash_dispatch(input: TokenStream) -> TokenStream {
     );
     out.into()
 }
+
+#[proc_macro_derive(SimpleHash)]
+pub fn simple_hash_dispatch(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input as DeriveInput);
+    let name = &ast.ident;
+    let out = quote!(
+        impl libra_crypto::hash::CanonicalHash for #name {}
+        impl libra_crypto::hash::InitialState<libra_crypto::hash::DefaultHasher> for #name {
+            fn initial_state() -> &'static once_cell::sync::OnceCell<libra_crypto::hash::DefaultHasher> {
+                static STATE: once_cell::sync::OnceCell<libra_crypto::hash::DefaultHasher> = once_cell::sync::OnceCell::new();
+                &STATE
+            }
+        }
+    );
+    out.into()
+}

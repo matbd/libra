@@ -5,15 +5,15 @@
 
 use crate as libra_crypto;
 use crate::{
-    hash::{CryptoHash, CryptoHasher, LIBRA_HASH_SUFFIX},
+    hash::{CryptoHash, CryptoHasher, SimpleHash, LIBRA_HASH_SUFFIX},
     HashValue,
 };
-use libra_crypto_derive::{CryptoHasher, LCSCryptoHash};
+use libra_crypto_derive::{CryptoHasher, LCSCryptoHash, SimpleHash};
 use serde::{Deserialize, Serialize};
 use tiny_keccak::{Hasher, Sha3};
 
 // The expected use case.
-#[derive(Serialize, Deserialize, CryptoHasher, LCSCryptoHash)]
+#[derive(Serialize, Deserialize, CryptoHasher, LCSCryptoHash, SimpleHash)]
 pub struct Foo {
     a: u64,
     b: u32,
@@ -76,6 +76,15 @@ fn test_lcs_cryptohash() {
     assert_eq!(
         &expected,
         actual.as_ref(),
+        "\nexpected: {} actual: {}",
+        String::from_utf8_lossy(&expected),
+        String::from_utf8_lossy(actual.as_ref())
+    );
+
+    let simple_hash = SimpleHash::hash(&value);
+    assert_eq!(
+        &expected,
+        simple_hash.as_ref(),
         "\nexpected: {} actual: {}",
         String::from_utf8_lossy(&expected),
         String::from_utf8_lossy(actual.as_ref())
